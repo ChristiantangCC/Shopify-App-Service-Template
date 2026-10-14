@@ -1,0 +1,27 @@
+# One container: no database, no Redis, no workers. The store's access token is
+# fetched when the app is opened in the store's admin and kept, encrypted, in
+# the `data` volume, so it survives restarts and deploys.
+#
+# Put a reverse proxy with HTTPS in front (Caddy, Traefik, a load balancer):
+# Shopify needs https://<your-domain>/ as App URL.
+services:
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '8080:8080'
+    volumes:
+      - data:/data
+    # The service idles at about 8 MB; 128 MB leaves plenty of room.
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '5'
+
+volumes:
+  data:
