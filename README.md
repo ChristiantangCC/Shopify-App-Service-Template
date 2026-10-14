@@ -1,5 +1,12 @@
 # Shopify App Service Template
 
+> [!NOTE]
+> This is **not** a full Shopify app starter in Go. It's the bare minimum to get a small service running.
+>
+> It's meant for agencies, developers and e-commerce managers who want one or more quick services up and running: "when X happens, do Y" in the store, without a database or Redis to run.
+>
+> Building an app that needs webhooks, a database, Redis caching, background jobs and queues, billing, multiple stores or a full admin UI? Start from a full app template instead.
+
 A small Go service that holds one store's Admin API access token and exposes a few endpoints of your own. No admin UI, no database, no Redis. About 25 MB image, about 8 MB RAM.
 
 Use it when you just need something like:
