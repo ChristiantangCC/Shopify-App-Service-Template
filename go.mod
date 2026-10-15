@@ -1,4 +1,4 @@
-module github.com/ChristiantangCC/Shopify-App-Service-Template
+module github.com/ChristiantangCC/Shopify-Go-Service-App-Template
 
 go 1.26.0
 

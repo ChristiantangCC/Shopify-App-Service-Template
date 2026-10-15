@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/shopify"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/shopify"
 )
 
 // Admin is the part of the Shopify client the handlers use (a fake in tests).

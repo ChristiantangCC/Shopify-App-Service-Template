@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/shopify"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/shopify"
 )
 
 // fakeAdmin answers every call with a fixed JSON body (or error) and records

@@ -19,12 +19,12 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/apikey"
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/appproxy"
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/config"
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/handlers"
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/logging"
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/shopify"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/apikey"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/appproxy"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/config"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/handlers"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/logging"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/shopify"
 )
 
 func main() {

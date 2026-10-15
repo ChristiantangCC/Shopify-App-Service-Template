@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ChristiantangCC/Shopify-App-Service-Template/internal/shopify"
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/shopify"
 )
 
 // Install handles GET /, the App URL Shopify loads inside the admin when the
