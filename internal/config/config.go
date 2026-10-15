@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/ChristiantangCC/Shopify-Go-Service-App-Template/internal/apikey"
 )
 
 // Config holds everything the service needs at start.
@@ -30,9 +32,14 @@ type Config struct {
 	ProxyMaxAge time.Duration `env:"PROXY_MAX_AGE" envDefault:"5m"`
 	// RateLimitPerMinute is the number of proxy requests one caller may make per minute.
 	RateLimitPerMinute int `env:"RATE_LIMIT_PER_MINUTE" envDefault:"30"`
-	// APIKey enables the /api routes for server-to-server callers (Shopify
-	// Flow, backends), sent as `Authorization: Bearer <key>`. Empty = /api off.
-	APIKey string `env:"API_KEY"`
+	// APIKey and APIKeys enable the /api routes for server-to-server callers
+	// (Shopify Flow, backends), sent as `Authorization: Bearer <key>`. API_KEY
+	// is one key; API_KEYS is "name:key,name:key" for several callers or a
+	// rotation. Both empty = /api off.
+	APIKey  string   `env:"API_KEY"`
+	APIKeys []string `env:"API_KEYS" envSeparator:","`
+	// Keys is APIKey and APIKeys parsed and validated.
+	Keys []apikey.Key `env:"-"`
 
 	// ServiceNamespace names the service in logs (OpenTelemetry service.namespace), e.g. "acme-reviews-service".
 	ServiceNamespace string `env:"SERVICE_NAMESPACE" envDefault:"shopify-app-service"`
@@ -54,8 +61,10 @@ func Load() (Config, error) {
 	if !strings.HasSuffix(cfg.Shop, ".myshopify.com") {
 		return cfg, fmt.Errorf("SHOPIFY_SHOP must be a myshopify domain, got %q", cfg.Shop)
 	}
-	if cfg.APIKey != "" && len(cfg.APIKey) < 32 {
-		return cfg, fmt.Errorf("API_KEY must be at least 32 characters (try: openssl rand -hex 32)")
+	keys, err := apikey.Parse(cfg.APIKey, cfg.APIKeys)
+	if err != nil {
+		return cfg, err
 	}
+	cfg.Keys = keys
 	return cfg, nil
 }

@@ -80,10 +80,10 @@ func run() error {
 	})
 
 	// Server-to-server callers (Shopify Flow, backends): a bearer API key.
-	// Off unless API_KEY is set.
-	if cfg.APIKey != "" {
+	// Off unless API_KEY or API_KEYS is set.
+	if len(cfg.Keys) > 0 {
 		router.Route("/api", func(r chi.Router) {
-			r.Use(apikey.Verify(cfg.APIKey, logger))
+			r.Use(apikey.Verify(cfg.Keys, logger))
 			endpoints(r)
 		})
 	}

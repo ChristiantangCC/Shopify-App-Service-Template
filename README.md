@@ -23,9 +23,11 @@ Shopify Flow, backend, cron ── Bearer API_KEY ──┐
 Storefront ─▶ App Proxy (signed by Shopify) ────┘
 ```
 
-- **`/api/...`**: server-to-server callers send `Authorization: Bearer <API_KEY>`.
+- **`/api/...`**: server-to-server callers send `Authorization: Bearer <key>`. One key in `API_KEY`, or one per caller in `API_KEYS=flow:<key>,erp:<key>`: the logs then show who called, and a key can be rotated by adding the new one before removing the old.
 - **`/proxy/...`**: storefront calls go through Shopify's App Proxy, which signs every request. No key in theme code.
 - **`GET /`**: the App URL. Opening the app in the admin hands the service its access token.
+
+**Shopify hiccups.** Throttling, 429s, 5xx answers and network errors are retried with backoff. Mutations are only resent after a 5xx or network error when they carry an `@idempotent` key, so a retry can never create a product twice.
 
 **The access token.** When the app is opened in the admin, the service exchanges the admin's session token for the store's offline access token. It's kept in memory and in one encrypted file (`$DATA_DIR/shopify-token.enc`, AES-256-GCM, keyed by the client secret), so it survives restarts and deploys. Every opening exchanges again, so newly approved scopes apply.
 
@@ -34,6 +36,8 @@ Storefront ─▶ App Proxy (signed by Shopify) ────┘
 Needs Go 1.26 and [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). The service must be running and reachable over HTTPS **before** the app is installed: installing opens the app in the admin, and that opening is what hands the service its token.
 
 ### 1. Run the service
+
+Click **Use this template** on GitHub to get your own copy (one repo per service), clone it, then:
 
 ```sh
 ./scripts/dev.sh

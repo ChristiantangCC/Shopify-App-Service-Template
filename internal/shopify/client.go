@@ -9,23 +9,38 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
 
-// maxThrottleRetries bounds how often a THROTTLED request is resent.
-const maxThrottleRetries = 3
+const (
+	// maxThrottleRetries bounds how often a THROTTLED request is resent.
+	maxThrottleRetries = 3
+	// maxTransientRetries bounds how often a request is resent after a
+	// Shopify 5xx or a network error.
+	maxTransientRetries = 3
+)
 
 // Client sends Admin API GraphQL requests for one store.
 type Client struct {
-	shop       string
-	apiVersion string
+	endpoint   string
 	tokens     *TokenStore
+	shop       string
 	httpClient *http.Client
+	// backoff is the wait before transient retry n (1, 2, 3).
+	backoff func(n int) time.Duration
 }
 
 // NewClient creates an Admin API client that uses the stored token.
 func NewClient(shop, apiVersion string, tokens *TokenStore) *Client {
-	return &Client{shop: shop, apiVersion: apiVersion, tokens: tokens, httpClient: &http.Client{Timeout: 30 * time.Second}}
+	return &Client{
+		endpoint:   fmt.Sprintf("https://%s/admin/api/%s/graphql.json", shop, apiVersion),
+		tokens:     tokens,
+		shop:       shop,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		backoff:    func(n int) time.Duration { return time.Duration(1<<(n-1)) * 500 * time.Millisecond },
+	}
 }
 
 // GraphQLError is one entry of a GraphQL `errors` array.
@@ -62,22 +77,48 @@ type graphqlResponse struct {
 
 var errUnauthorized = errors.New("shopify: unauthorized")
 
+// transientError is a failure that may succeed when resent: a 5xx or 429 from
+// Shopify, or a network error. executed is false when Shopify certainly did
+// not run the request (429), so even a mutation can be resent.
+type transientError struct {
+	err      error
+	executed bool
+}
+
+func (e *transientError) Error() string { return e.err.Error() }
+func (e *transientError) Unwrap() error { return e.err }
+
 // Do runs a GraphQL query or mutation and decodes `data` into out.
 //
-// A 401 means the app was uninstalled (or the token revoked): the token is
-// dropped and ErrNotConnected returned until the app is opened again. A
-// THROTTLED answer (nothing was executed) waits for the bucket and retries.
+//   - 401: the app was uninstalled (or the token revoked). The token is dropped
+//     and ErrNotConnected returned until the app is opened again.
+//   - THROTTLED or HTTP 429: nothing was executed, so it waits and retries.
+//   - 5xx or a network error: Shopify may or may not have run the request.
+//     Queries are retried with backoff. Mutations only when they carry an
+//     @idempotent key, because resending e.g. productCreate could create the
+//     product twice.
 func (c *Client) Do(ctx context.Context, query string, variables map[string]any, out any) error {
-	for attempt := 0; ; attempt++ {
+	retrySafe := isRetrySafe(query)
+	throttleRetries, transientRetries := 0, 0
+	for {
 		res, err := c.send(ctx, query, variables)
 		if errors.Is(err, errUnauthorized) {
 			c.tokens.Forget()
 			return ErrNotConnected
 		}
+		var transient *transientError
+		if errors.As(err, &transient) && (retrySafe || !transient.executed) && transientRetries < maxTransientRetries && ctx.Err() == nil {
+			transientRetries++
+			if err := sleep(ctx, c.backoff(transientRetries)); err != nil {
+				return err
+			}
+			continue
+		}
 		if err != nil {
 			return err
 		}
-		if isThrottled(res.Errors) && attempt < maxThrottleRetries {
+		if isThrottled(res.Errors) && throttleRetries < maxThrottleRetries {
+			throttleRetries++
 			if err := sleep(ctx, throttleWait(res)); err != nil {
 				return err
 			}
@@ -102,7 +143,7 @@ func (c *Client) send(ctx context.Context, query string, variables map[string]an
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://%s/admin/api/%s/graphql.json", c.shop, c.apiVersion), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -111,12 +152,21 @@ func (c *Client) send(ctx context.Context, query string, variables map[string]an
 
 	res, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("admin api: %w", err)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, &transientError{err: fmt.Errorf("admin api: %w", err), executed: true}
 	}
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 8<<20))
 	if res.StatusCode == http.StatusUnauthorized {
 		return nil, errUnauthorized
+	}
+	if res.StatusCode == http.StatusTooManyRequests {
+		return nil, &transientError{err: errors.New("admin api: Shopify answered 429")}
+	}
+	if res.StatusCode >= 500 {
+		return nil, &transientError{err: fmt.Errorf("admin api: Shopify answered %d", res.StatusCode), executed: true}
 	}
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("admin api: Shopify answered %d", res.StatusCode)
@@ -126,6 +176,34 @@ func (c *Client) send(ctx context.Context, query string, variables map[string]an
 		return nil, fmt.Errorf("admin api: %w", err)
 	}
 	return &parsed, nil
+}
+
+// idempotentKey matches an @idempotent(key: ...) directive with a value.
+var idempotentKey = regexp.MustCompile(`@idempotent\s*\(\s*key\s*:\s*[^)\s]`)
+
+// isRetrySafe reports whether resending the operation can't change the store
+// twice: a query, or a mutation with an @idempotent key.
+func isRetrySafe(query string) bool {
+	if idempotentKey.MatchString(query) {
+		return true
+	}
+	return !strings.HasPrefix(operationType(query), "mutation")
+}
+
+// operationType returns the document with leading whitespace and # comments
+// removed, which starts with "query", "mutation" or "{".
+func operationType(query string) string {
+	for {
+		query = strings.TrimSpace(query)
+		if !strings.HasPrefix(query, "#") {
+			return query
+		}
+		_, rest, found := strings.Cut(query, "\n")
+		if !found {
+			return ""
+		}
+		query = rest
+	}
 }
 
 func isThrottled(errs GraphQLErrors) bool {
